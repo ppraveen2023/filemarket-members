@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>FileMarket Member Tree</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: file-explorer split. Left = folder-style tree of invitations, right = sticky inspector for the selected person. */
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --fg: #171b24;
+  --muted: #5d6576;
+  --faint: #e3e6ec;
+  --line: #cfd4de;
+  --accent: #b7740a;      /* folder amber */
+  --accent-soft: #fbf0d9;
+  --link: #1f5fbf;
+  --hit: #fff0b8;
+  --bad: #b3261e;
+  --bad-soft: #fbe3e1;
+  --ok: #1d7a4d;
+  --ok-soft: #dff2e8;
+  --info-soft: #e4ecfa;
+  --sel: #e9eefa;
+  --font-display: "Schibsted Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Schibsted Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11141a; --panel: #181c24; --fg: #e6e9ef; --muted: #98a0b0; --faint: #262b36; --line: #353c4a;
+  --accent: #e3a53a; --accent-soft: #3a2c12; --link: #8ab4ff; --hit: #5a4a10; --bad: #ff8a80; --bad-soft: #43201e;
+  --ok: #6fd3a0; --ok-soft: #173a29; --info-soft: #1f2a40; --sel: #232c3e; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #11141a; --panel: #181c24; --fg: #e6e9ef; --muted: #98a0b0; --faint: #262b36; --line: #353c4a;
+  --accent: #e3a53a; --accent-soft: #3a2c12; --link: #8ab4ff; --hit: #5a4a10; --bad: #ff8a80; --bad-soft: #43201e;
+  --ok: #6fd3a0; --ok-soft: #173a29; --info-soft: #1f2a40; --sel: #232c3e; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 40px; display: flex; flex-direction: column; gap: 16px; }
+header h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(22px, 3vw, 30px); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 72ch; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 12px 16px; background: var(--panel); border: 1px solid var(--faint); border-radius: 10px; }
+.stat { display: flex; flex-direction: column; min-width: 0; }
+.stat b { font-family: var(--font-display); font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.search { flex: 1 1 260px; min-width: 0; position: relative; }
+.search input { width: 100%; padding: 9px 12px 9px 34px; font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+input:focus-visible, button:focus-visible, select:focus-visible, .row:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+button, select { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+button:hover, select:hover { border-color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 8px 10px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); font-weight: 600; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } .inspector { position: static !important; max-height: none !important; } }
+
+.treebox { background: var(--panel); border: 1px solid var(--faint); border-radius: 10px; padding: 8px 4px 8px 8px; overflow-x: auto; min-width: 0; }
+.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+.tree ul { margin-left: 13px; padding-left: 10px; border-left: 1px solid var(--line); }
+.row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; cursor: pointer; white-space: nowrap; min-height: 28px; }
+.row:hover { background: var(--faint); }
+.row.sel { background: var(--sel); box-shadow: inset 0 0 0 1px var(--link); }
+.row.hit .nm { background: var(--hit); border-radius: 3px; }
+.row.dim { opacity: 0.55; }
+.tw { width: 18px; height: 18px; flex: none; display: grid; place-items: center; color: var(--muted); border-radius: 4px; }
+.tw svg { transition: transform .12s; }
+.open > .row .tw svg { transform: rotate(90deg); }
+.tw.leaf::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--line); }
+.ic { flex: none; color: var(--accent); display: grid; place-items: center; }
+.ic.person { color: var(--muted); }
+.nm { font-weight: 500; }
+.nm.phone { font-family: var(--font-mono); font-size: 13px; font-weight: 400; }
+.who { display: inline-block; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; font-size: 12px; color: var(--link); background: var(--info-soft); border-radius: 4px; padding: 0 5px; font-weight: 500; }
+.when { color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+.cnt { font-family: var(--font-mono); font-size: 11.5px; padding: 1px 6px; border-radius: 10px; background: var(--accent-soft); color: var(--fg); }
+.pill { font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600; letter-spacing: 0.02em; }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.info { background: var(--info-soft); color: var(--link); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.group-row .nm { font-family: var(--font-display); font-weight: 700; }
+.group-row .sub { color: var(--muted); font-size: 12px; }
+.empty { padding: 16px; color: var(--muted); }
+
+.inspector { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--faint); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.inspector h2 { margin: 0; font-family: var(--font-display); font-size: 20px; font-weight: 700; word-break: break-word; }
+.inspector h3 { margin: 0 0 6px; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.chain { display: flex; flex-direction: column; gap: 0; }
+.chain .step { display: grid; grid-template-columns: 14px minmax(0,1fr); gap: 8px; }
+.chain .dot { position: relative; }
+.chain .dot::before { content: ""; position: absolute; left: 4px; top: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.chain .step:not(:last-child) .dot::after { content: ""; position: absolute; left: 7px; top: 15px; bottom: -7px; width: 1px; background: var(--line); }
+.chain .step > div:last-child { padding-bottom: 8px; min-width: 0; }
+.lnk { color: var(--link); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-align: left; word-break: break-word; }
+.lnk:hover { text-decoration: underline; }
+.hist { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.hist li { display: grid; grid-template-columns: 112px minmax(0,1fr); gap: 8px; }
+.hist .when { font-size: 11.5px; padding-top: 1px; }
+.kids { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.kids li { display: flex; justify-content: space-between; gap: 8px; }
+.kids li .when { flex: none; }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+.facts div { background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+.facts b { display: block; font-family: var(--font-display); font-size: 18px; font-variant-numeric: tabular-nums; }
+.facts span { color: var(--muted); font-size: 11.5px; }
+.note { color: var(--muted); font-size: 12.5px; }
+.leaders { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.leaders li { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 10px; align-items: baseline; }
+.leaders .bar { height: 6px; background: var(--accent); border-radius: 3px; opacity: .8; }
+footer { color: var(--muted); font-size: 12.5px; max-width: 90ch; }
+footer ul { margin: 6px 0 0; padding-left: 18px; }
+@media (prefers-reduced-motion: reduce) { .tw svg { transition: none; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📂 FileMarket (Physical AI Data) · who added whom</h1>
+    <p>Built from the WhatsApp export of Oct 11, 2026. Each folder is a person, and inside it are the people they added, in the order they added them. Select anyone to see the chain that brought them in.</p>
+    <p style="margin:2px 0 0;font-size:13px"><a href="graph.html">Prefer circles and lines? Open the network view →</a></p>
+  </header>
+
+  <section class="stats" id="stats" aria-label="Summary"></section>
+
+  <div class="toolbar">
+    <label class="search" for="q">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search a name or number, e.g. Kaif or 84848" autocomplete="off">
+    </label>
+    <div class="seg" role="group" aria-label="Order of people inside each folder">
+      <button type="button" id="sortTime" aria-pressed="true">By date</button>
+      <button type="button" id="sortSize" aria-pressed="false">By network size</button>
+    </div>
+    <button type="button" id="expandAll">Expand all</button>
+    <button type="button" id="collapseAll">Collapse all</button>
+  </div>
+
+  <div class="main">
+    <div class="treebox"><ul class="tree" id="tree" role="tree"></ul></div>
+    <aside class="inspector" id="inspector" aria-live="polite"></aside>
+  </div>
+
+  <footer>
+    <strong>How to read this</strong>
+    <ul>
+      <li>A person sits under whoever <em>first</em> brought them in. Later re-adds, removals and exits are listed in their history.</li>
+      <li>“In the group before the log” holds people who were already members when the export's history starts. The export doesn't say who added them.</li>
+      <li>WhatsApp shows saved contacts by name and everyone else by number, so one person may appear under both. This page matches exact text only.</li>
+      <li>WhatsApp sometimes writes “Someone added X” right after a named add or invite-link join of the same person. Those echoes are dropped. One add with no named adder remains.</li>
+      <li>A <strong>~Name</strong> chip next to a number is the WhatsApp name saved in the phone's contacts list. Numbers without a chip aren't in the contacts.</li>
+      <li>“Chatted, but WhatsApp never recorded who added them” holds people who appear only as message senders. Invite-link join notifications can be switched off in WhatsApp, and then the export has no trace of how they got in.</li>
+    </ul>
+  </footer>
+</div>
+
+<script src="names.js"></script>
+<script>
+const DATA = {"events":[{"d":"2025-09-23","t":"8:26 PM","k":"2025-09-23 1226","i":0,"type":"create","actor":"You","targets":["You"]},{"d":"2026-07-17","t":"2:37 PM","k":"2026-07-17 0877","i":1,"type":"add","actor":"Praveen","targets":["You"]},{"d":"2026-07-17","t":"2:37 PM","k":"2026-07-17 0877","i":4,"type":"add","actor":"Someone","targets":["+91 84848 16391"]},{"d":"2026-07-17","t":"2:40 PM","k":"2026-07-17 0880","i":5,"type":"add","actor":"You","targets":["Kaif"]},{"d":"2026-07-17","t":"6:09 PM","k":"2026-07-17 1089","i":6,"type":"add","actor":"Praveen","targets":["Nitish"]},{"d":"2026-07-18","t":"12:46 AM","k":"2026-07-18 0046","i":7,"type":"other","actor":"+91 70202 62525","text":"turned off disappearing messages"},{"d":"2026-07-18","t":"1:02 AM","k":"2026-07-18 0062","i":8,"type":"other","actor":"Sayed","text":"turned off disappearing messages"},{"d":"2026-07-18","t":"12:03 PM","k":"2026-07-18 0723","i":9,"type":"add","actor":"+91 98714 86958","targets":["+91 870 785 1667"]},{"d":"2026-07-18","t":"8:42 PM","k":"2026-07-18 1242","i":11,"type":"add","actor":"+91 88029 45034","targets":["+90 507 970 97 20"]},{"d":"2026-07-20","t":"5:27 PM","k":"2026-07-20 1047","i":12,"type":"add","actor":"+91 878 968 6667","targets":["+91 82200 24048"]},{"d":"2026-07-21","t":"6:22 AM","k":"2026-07-21 0382","i":14,"type":"add","actor":"James Kuj","targets":["Jetsadakorn Hsieh (Benz)"]},{"d":"2026-07-21","t":"6:32 PM","k":"2026-07-21 1112","i":15,"type":"add","actor":"+61 414 452 875","targets":["+61 401 880 677"]},{"d":"2026-07-22","t":"8:34 AM","k":"2026-07-22 0514","i":16,"type":"add","actor":"+66 82 956 2857","targets":["+86 157 7900 5235"]},{"d":"2026-07-22","t":"10:02 AM","k":"2026-07-22 0602","i":18,"type":"add","actor":"+86 157 7900 5235","targets":["+86 158 9976 5636"]},{"d":"2026-07-22","t":"10:23 AM","k":"2026-07-22 0623","i":19,"type":"add","actor":"Aditya Gupta","targets":["+91 81976 81360"]},{"d":"2026-07-22","t":"11:19 AM","k":"2026-07-22 0679","i":21,"type":"add","actor":"+91 96541 49837","targets":["+91 82338 89440"]},{"d":"2026-07-22","t":"12:08 PM","k":"2026-07-22 0728","i":23,"type":"add","actor":"+91 81976 81360","targets":["Sumit Sinha Omni"]},{"d":"2026-07-22","t":"8:43 PM","k":"2026-07-22 1243","i":24,"type":"add","actor":"Sayed","targets":["Abdul Azam","Cristian Meo"]},{"d":"2026-07-23","t":"8:21 AM","k":"2026-07-23 0501","i":25,"type":"add","actor":"David Miller I Robot Data","targets":["+92 306 5875969"]},{"d":"2026-07-23","t":"12:01 PM","k":"2026-07-23 0721","i":27,"type":"add","actor":"+66 82 956 2857","targets":["+92 340 2804239","+91 95067 10053","+91 94872 05589","+91 94583 02977","Ashutosh Kashyap","+86 180 7825 0780","+234 816 352 2478"]},{"d":"2026-07-23","t":"2:27 PM","k":"2026-07-23 0867","i":28,"type":"add","actor":"Cristian Meo","targets":["+39 392 755 4599"]},{"d":"2026-07-23","t":"4:26 PM","k":"2026-07-23 0986","i":29,"type":"add","actor":"Bhartesh","targets":["+91 89892 16771"]},{"d":"2026-07-23","t":"9:26 PM","k":"2026-07-23 1286","i":30,"type":"add","actor":"Shloak","targets":["Chih Hsuan Wu"]},{"d":"2026-07-24","t":"6:44 AM","k":"2026-07-24 0404","i":31,"type":"add","actor":"+91 94583 02977","targets":["+91 99532 60592"]},{"d":"2026-07-24","t":"3:44 PM","k":"2026-07-24 0944","i":32,"type":"add","actor":"+91 87561 82829","targets":["+91 89606 05588"]},{"d":"2026-07-24","t":"4:56 PM","k":"2026-07-24 1016","i":33,"type":"add","actor":"+66 82 956 2857","targets":["+971 58 517 1370","+7 922 133-56-71"]},{"d":"2026-07-25","t":"9:54 AM","k":"2026-07-25 0594","i":35,"type":"add","actor":"+66 82 956 2857","targets":["Andreas"]},{"d":"2026-07-25","t":"1:28 PM","k":"2026-07-25 0808","i":36,"type":"remove","actor":"+91 836 016 8458","targets":["+91 62395 95099"]},{"d":"2026-07-25","t":"1:29 PM","k":"2026-07-25 0809","i":37,"type":"remove","actor":"+91 836 016 8458","targets":["+91 78276 61066"]},{"d":"2026-07-25","t":"10:23 PM","k":"2026-07-25 1343","i":38,"type":"add","actor":"+91 81976 81360","targets":["+91 84088 86128"]},{"d":"2026-07-27","t":"11:22 AM","k":"2026-07-27 0682","i":39,"type":"add","actor":"+1 (732) 691-6442","targets":["+1 (478) 263-7625"]},{"d":"2026-07-27","t":"12:09 PM","k":"2026-07-27 0729","i":40,"type":"rename","actor":"+66 82 956 2857","text":"📂 Physical AI Data Hustlers"},{"d":"2026-07-27","t":"3:02 PM","k":"2026-07-27 0902","i":41,"type":"add","actor":"+92 340 2804239","targets":["+92 332 9075079"]},{"d":"2026-07-27","t":"3:32 PM","k":"2026-07-27 0932","i":42,"type":"add","actor":"+91 70110 55467","targets":["+90 539 696 97 20"]},{"d":"2026-07-28","t":"12:20 PM","k":"2026-07-28 0740","i":43,"type":"add","actor":"Ishan","targets":["Abhishek Anand"]},{"d":"2026-07-28","t":"8:09 PM","k":"2026-07-28 1209","i":44,"type":"add","actor":"+92 332 9075079","targets":["+971 55 573 4069"]},{"d":"2026-07-30","t":"12:16 AM","k":"2026-07-30 0016","i":45,"type":"add","actor":"Sayed","targets":["Dhruv"]},{"d":"2026-07-30","t":"1:08 PM","k":"2026-07-30 0788","i":46,"type":"rename","actor":"+66 82 956 2857","text":"📂 AI Data Hustlers"},{"d":"2026-07-31","t":"1:51 PM","k":"2026-07-31 0831","i":47,"type":"add","actor":"Shreyash","targets":["Pushkar Singh"]},{"d":"2026-07-31","t":"1:58 PM","k":"2026-07-31 0838","i":48,"type":"add","actor":"Shreyash","targets":["Shashwat shukla"]},{"d":"2026-07-31","t":"2:57 PM","k":"2026-07-31 0897","i":49,"type":"add","actor":"Dhruv","targets":["Harshith Murthy"]},{"d":"2026-08-01","t":"10:06 AM","k":"2026-08-01 0606","i":50,"type":"add","actor":"+1 (732) 691-6442","targets":["+1 (630) 877-8923"]},{"d":"2026-08-01","t":"11:52 AM","k":"2026-08-01 0712","i":51,"type":"add","actor":"+1 (630) 877-8923","targets":["+1 (765) 746-9509","deepit"]},{"d":"2026-08-01","t":"11:01 PM","k":"2026-08-01 1381","i":52,"type":"left","actor":"+91 94784 68818","targets":["+91 94784 68818"]},{"d":"2026-08-02","t":"1:23 AM","k":"2026-08-02 0083","i":53,"type":"add","actor":"+91 98201 57550","targets":["Veer Parikh","+91 98202 68544"]},{"d":"2026-08-02","t":"4:25 AM","k":"2026-08-02 0265","i":54,"type":"add","actor":"+91 98202 68544","targets":["+91 98202 14290"]},{"d":"2026-08-02","t":"6:27 AM","k":"2026-08-02 0387","i":56,"type":"add","actor":"Diego Pousa","targets":["+91 98199 54448"]},{"d":"2026-08-02","t":"4:24 PM","k":"2026-08-02 0984","i":57,"type":"add","actor":"Praveen","targets":["Sam (the passing lad)"]},{"d":"2026-08-02","t":"7:48 PM","k":"2026-08-02 1188","i":58,"type":"add","actor":"Shloak","targets":["Shreenabh"]},{"d":"2026-08-02","t":"8:42 PM","k":"2026-08-02 1242","i":59,"type":"remove","actor":"Anirudh Sachdeva","targets":["Praveen"]},{"d":"2026-08-02","t":"8:43 PM","k":"2026-08-02 1243","i":60,"type":"remove","actor":"Anirudh Sachdeva","targets":["Garv FH"]},{"d":"2026-08-02","t":"8:43 PM","k":"2026-08-02 1243","i":61,"type":"remove","actor":"Anirudh Sachdeva","targets":["You"]},{"d":"2026-08-06","t":"3:38 PM","k":"2026-08-06 0938","i":62,"type":"add","actor":"+66 82 956 2857","targets":["You"]},{"d":"2026-08-06","t":"10:03 PM","k":"2026-08-06 1323","i":63,"type":"join","actor":null,"targets":["+1 (646) 945-6223"]},{"d":"2026-08-07","t":"10:17 PM","k":"2026-08-07 1337","i":64,"type":"add","actor":"+66 82 956 2857","targets":["+1 (949) 439-0418","+1 (949) 413-8582"]},{"d":"2026-08-09","t":"12:44 AM","k":"2026-08-09 0044","i":65,"type":"add","actor":"+91 878 968 6667","targets":["Ishank"]},{"d":"2026-08-09","t":"12:45 AM","k":"2026-08-09 0045","i":66,"type":"add","actor":"+91 878 968 6667","targets":["+91 98710 05812"]},{"d":"2026-08-09","t":"3:35 AM","k":"2026-08-09 0215","i":67,"type":"add","actor":"Gagan","targets":["+34 603 50 60 01"]},{"d":"2026-08-10","t":"7:24 AM","k":"2026-08-10 0444","i":68,"type":"add","actor":"+1 (650) 537-8300","targets":["+375 44 598-03-08"]},{"d":"2026-08-10","t":"11:46 AM","k":"2026-08-10 0706","i":69,"type":"add","actor":"Veer Parikh","targets":["+91 98335 22453"]},{"d":"2026-08-10","t":"3:30 PM","k":"2026-08-10 0930","i":70,"type":"other","actor":"You","text":"changed settings: only admins can edit group info"},{"d":"2026-08-10","t":"3:30 PM","k":"2026-08-10 0930","i":71,"type":"add","actor":"+66 82 956 2857","targets":["+66 89 686 8460","+1 (408) 372-3278"]},{"d":"2026-08-10","t":"7:46 PM","k":"2026-08-10 1186","i":72,"type":"add","actor":"+66 82 956 2857","targets":["+49 1511 2928530"]},{"d":"2026-08-10","t":"10:41 PM","k":"2026-08-10 1361","i":73,"type":"add","actor":"+66 82 956 2857","targets":["+86 187 0816 7547"]},{"d":"2026-08-11","t":"1:09 AM","k":"2026-08-11 0069","i":74,"type":"join","actor":null,"targets":["Bhavanipratap Patil"]},{"d":"2026-08-11","t":"9:28 AM","k":"2026-08-11 0568","i":75,"type":"join","actor":null,"targets":["+91 95755 17047"]},{"d":"2026-08-11","t":"12:09 PM","k":"2026-08-11 0729","i":77,"type":"add","actor":"+91 98784 51745","targets":["+91 62391 46809"]},{"d":"2026-08-11","t":"12:15 PM","k":"2026-08-11 0735","i":78,"type":"add","actor":"+91 95755 17047","targets":["+91 86025 51446"]},{"d":"2026-08-11","t":"6:46 PM","k":"2026-08-11 1126","i":79,"type":"join","actor":null,"targets":["+91 99923 66460"]},{"d":"2026-08-11","t":"6:47 PM","k":"2026-08-11 1127","i":80,"type":"join","actor":null,"targets":["+91 81309 95656"]},{"d":"2026-08-11","t":"10:48 PM","k":"2026-08-11 1368","i":81,"type":"add","actor":"+66 82 956 2857","targets":["Mahid"]},{"d":"2026-08-12","t":"3:20 PM","k":"2026-08-12 0920","i":82,"type":"add","actor":"Mahid","targets":["Sam (the passing lad)","Nidhish"]},{"d":"2026-08-12","t":"6:01 PM","k":"2026-08-12 1081","i":83,"type":"join","actor":null,"targets":["+971 50 672 3124"]},{"d":"2026-08-12","t":"7:59 PM","k":"2026-08-12 1199","i":84,"type":"add","actor":"+91 99898 77899","targets":["+91 99404 62219"]},{"d":"2026-08-13","t":"9:21 AM","k":"2026-08-13 0561","i":86,"type":"join","actor":null,"targets":["+91 92162 99009"]},{"d":"2026-08-13","t":"11:02 AM","k":"2026-08-13 0662","i":87,"type":"add","actor":"+91 98714 86958","targets":["+91 93183 80433"]},{"d":"2026-08-13","t":"10:27 PM","k":"2026-08-13 1347","i":88,"type":"add","actor":"Sayed","targets":["Marie Roohi"]},{"d":"2026-08-13","t":"11:29 PM","k":"2026-08-13 1409","i":90,"type":"add","actor":"Bhavanipratap Patil","targets":["+91 87667 29978"]},{"d":"2026-08-13","t":"11:31 PM","k":"2026-08-13 1411","i":91,"type":"add","actor":"You","targets":["Shubh"]},{"d":"2026-08-14","t":"11:58 AM","k":"2026-08-14 0718","i":92,"type":"add","actor":"Shloak","targets":["+91 93593 05009"]},{"d":"2026-08-14","t":"1:24 PM","k":"2026-08-14 0804","i":93,"type":"add","actor":"+66 82 956 2857","targets":["+66 91 456 2415"]},{"d":"2026-08-18","t":"12:52 PM","k":"2026-08-18 0772","i":94,"type":"add","actor":"+66 82 956 2857","targets":["+91 79 7311 3553"]},{"d":"2026-08-18","t":"1:19 PM","k":"2026-08-18 0799","i":95,"type":"add","actor":"+66 82 956 2857","targets":["+91 88770 63620"]},{"d":"2026-08-18","t":"7:56 PM","k":"2026-08-18 1196","i":96,"type":"add","actor":"+66 82 956 2857","targets":["+998 91 019 32 59"]},{"d":"2026-08-18","t":"8:41 PM","k":"2026-08-18 1241","i":97,"type":"add","actor":"Shubh","targets":["+91 70148 87667"]},{"d":"2026-08-18","t":"8:44 PM","k":"2026-08-18 1244","i":99,"type":"add","actor":"Shubh","targets":["Himanshu"]},{"d":"2026-08-18","t":"10:43 PM","k":"2026-08-18 1363","i":100,"type":"add","actor":"+66 82 956 2857","targets":["+55 47 9228-1914"]},{"d":"2026-08-18","t":"11:03 PM","k":"2026-08-18 1383","i":101,"type":"add","actor":"+66 82 956 2857","targets":["Aryan Agarwal"]},{"d":"2026-08-19","t":"2:07 AM","k":"2026-08-19 0127","i":102,"type":"add","actor":"Shashwat shukla","targets":["+91 95215 04222"]},{"d":"2026-08-19","t":"4:23 AM","k":"2026-08-19 0263","i":103,"type":"add","actor":"Marie Roohi","targets":["@iRezaRoohi"]},{"d":"2026-08-19","t":"11:08 AM","k":"2026-08-19 0668","i":104,"type":"join","actor":null,"targets":["+998 93 510 97 53"]},{"d":"2026-08-19","t":"7:34 PM","k":"2026-08-19 1174","i":105,"type":"add","actor":"Veer Parikh","targets":["+91 98218 22088"]},{"d":"2026-08-19","t":"10:26 PM","k":"2026-08-19 1346","i":106,"type":"add","actor":"swapnil saha","targets":["+91 83038 82053"]},{"d":"2026-08-19","t":"10:28 PM","k":"2026-08-19 1348","i":107,"type":"add","actor":"+91 88770 63620","targets":["+91 95005 88159"]},{"d":"2026-08-19","t":"10:29 PM","k":"2026-08-19 1349","i":108,"type":"add","actor":"+91 88770 63620","targets":["+91 7488 661 248"]},{"d":"2026-08-19","t":"10:29 PM","k":"2026-08-19 1349","i":109,"type":"add","actor":"+91 95005 88159","targets":["+91 99290 36602"]},{"d":"2026-08-19","t":"10:48 PM","k":"2026-08-19 1368","i":110,"type":"join","actor":null,"targets":["+55 11 92606-1064"]},{"d":"2026-08-19","t":"10:49 PM","k":"2026-08-19 1369","i":111,"type":"join","actor":null,"targets":["Caio Såbra"]},{"d":"2026-08-19","t":"11:06 PM","k":"2026-08-19 1386","i":112,"type":"join","actor":null,"targets":["Caio Såbra"]},{"d":"2026-08-19","t":"11:20 PM","k":"2026-08-19 1400","i":113,"type":"add","actor":"+66 82 956 2857","targets":["+1 (305) 497-1554"]},{"d":"2026-08-20","t":"3:34 AM","k":"2026-08-20 0214","i":114,"type":"join","actor":null,"targets":["Vardhan"]},{"d":"2026-08-20","t":"5:25 PM","k":"2026-08-20 1045","i":115,"type":"join","actor":null,"targets":["+998 90 372 46 45"]},{"d":"2026-08-21","t":"12:01 AM","k":"2026-08-21 0001","i":116,"type":"add","actor":"+49 1511 2928530","targets":["Arjun Raj Jain"]},{"d":"2026-08-21","t":"11:31 AM","k":"2026-08-21 0691","i":117,"type":"add","actor":"+66 82 956 2857","targets":["+66 61 293 5801"]},{"d":"2026-08-21","t":"8:48 PM","k":"2026-08-21 1248","i":118,"type":"add","actor":"Shloak","targets":["+91 98112 83137"]},{"d":"2026-08-21","t":"8:49 PM","k":"2026-08-21 1249","i":119,"type":"join","actor":null,"targets":["+91 90054 44377"]},{"d":"2026-08-21","t":"8:59 PM","k":"2026-08-21 1259","i":120,"type":"add","actor":"+91 98112 83137","targets":["+91 97419 85101"]},{"d":"2026-08-23","t":"10:35 PM","k":"2026-08-23 1355","i":121,"type":"add","actor":"+66 82 956 2857","targets":["sadiya"]},{"d":"2026-08-24","t":"12:09 AM","k":"2026-08-24 0009","i":122,"type":"join","actor":null,"targets":["Dylan"]},{"d":"2026-08-24","t":"4:18 PM","k":"2026-08-24 0978","i":123,"type":"add","actor":"+91 747 042 0632","targets":["+91 86003 63059"]},{"d":"2026-08-24","t":"9:00 PM","k":"2026-08-24 1260","i":124,"type":"add","actor":"+66 82 956 2857","targets":["+90 533 737 52 88"]},{"d":"2026-08-24","t":"10:15 PM","k":"2026-08-24 1335","i":125,"type":"add","actor":"+91 99404 62219","targets":["+91 7637 012 754"]},{"d":"2026-08-25","t":"1:41 PM","k":"2026-08-25 0821","i":126,"type":"add","actor":"+91 747 042 0632","targets":["+91 91315 24540"]},{"d":"2026-08-25","t":"1:43 PM","k":"2026-08-25 0823","i":127,"type":"add","actor":"+91 99084 60566","targets":["+91 99942 83310"]},{"d":"2026-08-25","t":"11:03 PM","k":"2026-08-25 1383","i":128,"type":"add","actor":"+66 82 956 2857","targets":["+1 (609) 751-3958"]},{"d":"2026-08-25","t":"11:06 PM","k":"2026-08-25 1386","i":129,"type":"add","actor":"+66 82 956 2857","targets":["+972 54-782-8089"]},{"d":"2026-08-25","t":"11:06 PM","k":"2026-08-25 1386","i":130,"type":"add","actor":"+66 82 956 2857","targets":["Shlomo Stark"]},{"d":"2026-08-25","t":"11:11 PM","k":"2026-08-25 1391","i":131,"type":"add","actor":"+66 82 956 2857","targets":["+972 54-260-0851"]},{"d":"2026-08-26","t":"12:06 AM","k":"2026-08-26 0006","i":132,"type":"join","actor":null,"targets":["+91 78929 88845"]},{"d":"2026-08-26","t":"2:20 AM","k":"2026-08-26 0140","i":134,"type":"join","actor":null,"targets":["Eshan alam"]},{"d":"2026-08-26","t":"5:26 AM","k":"2026-08-26 0326","i":136,"type":"add","actor":"+1 (609) 751-3958","targets":["+65 9777 0667","+1 (513) 828-8482"]},{"d":"2026-08-27","t":"9:51 PM","k":"2026-08-27 1311","i":137,"type":"add","actor":"+66 82 956 2857","targets":["+1 (401) 345-3247"]},{"d":"2026-08-27","t":"10:23 PM","k":"2026-08-27 1343","i":138,"type":"join","actor":null,"targets":["+91 83092 90612"]},{"d":"2026-08-27","t":"11:49 PM","k":"2026-08-27 1429","i":139,"type":"join","actor":null,"targets":["+57 305 2616872"]},{"d":"2026-08-28","t":"8:32 PM","k":"2026-08-28 1232","i":140,"type":"join","actor":null,"targets":["+41 79 577 27 36"]},{"d":"2026-08-28","t":"10:14 PM","k":"2026-08-28 1334","i":142,"type":"add","actor":"+91 81976 81360","targets":["+91 91401 79304","+91 75013 51937"]},{"d":"2026-08-28","t":"11:42 PM","k":"2026-08-28 1422","i":143,"type":"add","actor":"+91 91401 79304","targets":["+91 93352 78886","+91 83037 08386"]},{"d":"2026-08-29","t":"4:33 PM","k":"2026-08-29 0993","i":144,"type":"add","actor":"+91 91401 79304","targets":["+91 88875 74950"]},{"d":"2026-08-30","t":"2:59 AM","k":"2026-08-30 0179","i":145,"type":"add","actor":"Shubh","targets":["+91 821 776 0263"]},{"d":"2026-08-30","t":"9:02 AM","k":"2026-08-30 0542","i":147,"type":"add","actor":"+91 88875 74950","targets":["+91 70816 09878"]},{"d":"2026-08-30","t":"6:52 PM","k":"2026-08-30 1132","i":148,"type":"add","actor":"Dhruv","targets":["+91 94821 90680"]},{"d":"2026-08-30","t":"7:07 PM","k":"2026-08-30 1147","i":149,"type":"add","actor":"+91 94821 90680","targets":["+91 91368 20958"]},{"d":"2026-08-30","t":"7:14 PM","k":"2026-08-30 1154","i":150,"type":"add","actor":"Pushkar Singh","targets":["+91 95324 67648"]},{"d":"2026-08-31","t":"10:31 AM","k":"2026-08-31 0631","i":151,"type":"add","actor":"+66 82 956 2857","targets":["+91 97467 51054"]},{"d":"2026-08-31","t":"2:15 PM","k":"2026-08-31 0855","i":152,"type":"add","actor":"+86 157 7900 5235","targets":["+86 132 5836 6920"]},{"d":"2026-08-31","t":"3:35 PM","k":"2026-08-31 0935","i":153,"type":"add","actor":"Himanshu","targets":["+91 99580 24789","+91 95217 99760"]},{"d":"2026-08-31","t":"3:58 PM","k":"2026-08-31 0958","i":154,"type":"add","actor":"+91 99580 24789","targets":["+91 99583 34579","+91 91700 33511"]},{"d":"2026-08-31","t":"10:07 PM","k":"2026-08-31 1327","i":155,"type":"add","actor":"Shloak","targets":["+91 87924 78749"]},{"d":"2026-08-31","t":"11:29 PM","k":"2026-08-31 1409","i":157,"type":"add","actor":"+91 87924 78749","targets":["arya👺"]},{"d":"2026-09-01","t":"12:56 PM","k":"2026-09-01 0776","i":158,"type":"add","actor":"+66 82 956 2857","targets":["+91 70068 34182"]},{"d":"2026-09-02","t":"4:50 PM","k":"2026-09-02 1010","i":159,"type":"join","actor":null,"targets":["+91 98848 36201"]},{"d":"2026-09-02","t":"5:14 PM","k":"2026-09-02 1034","i":160,"type":"join","actor":null,"targets":["+91 96964 02572"]},{"d":"2026-09-02","t":"5:17 PM","k":"2026-09-02 1037","i":161,"type":"join","actor":null,"targets":["+91 96966 13452"]},{"d":"2026-09-02","t":"5:28 PM","k":"2026-09-02 1048","i":162,"type":"join","actor":null,"targets":["+91 731 758 9321"]},{"d":"2026-09-02","t":"6:10 PM","k":"2026-09-02 1090","i":163,"type":"add","actor":"+91 87924 78749","targets":["+91 78924 53194"]},{"d":"2026-09-02","t":"7:57 PM","k":"2026-09-02 1197","i":164,"type":"add","actor":"+91 95324 67648","targets":["+91 80080 73697"]},{"d":"2026-09-02","t":"8:09 PM","k":"2026-09-02 1209","i":165,"type":"join","actor":null,"targets":["+91 63075 09461"]},{"d":"2026-09-02","t":"9:14 PM","k":"2026-09-02 1274","i":166,"type":"add","actor":"+66 82 956 2857","targets":["+91 96964 02572","+91 731 758 9321","+91 96966 13452","+91 78924 53194","+91 80080 73697","+91 63075 09461","+91 98848 36201"]},{"d":"2026-09-02","t":"9:55 PM","k":"2026-09-02 1315","i":167,"type":"join","actor":null,"targets":["+91 83540 99270"]},{"d":"2026-09-02","t":"10:26 PM","k":"2026-09-02 1346","i":168,"type":"add","actor":"Shubh","targets":["+91 80040 07372"]},{"d":"2026-09-03","t":"8:25 AM","k":"2026-09-03 0505","i":169,"type":"add","actor":"+66 82 956 2857","targets":["+91 80040 07372","+91 83540 99270"]},{"d":"2026-09-03","t":"10:54 AM","k":"2026-09-03 0654","i":170,"type":"add","actor":"+91 95215 04222","targets":["+91 94172 51840"]},{"d":"2026-09-03","t":"5:52 PM","k":"2026-09-03 1072","i":171,"type":"join","actor":null,"targets":["+961 76 827 310"]},{"d":"2026-09-03","t":"6:42 PM","k":"2026-09-03 1122","i":172,"type":"join","actor":null,"targets":["Hari"]},{"d":"2026-09-04","t":"9:43 AM","k":"2026-09-04 0583","i":174,"type":"add","actor":"arya👺","targets":["+1 (401) 328-0984"]},{"d":"2026-09-04","t":"9:43 AM","k":"2026-09-04 0583","i":175,"type":"add","actor":"+91 87924 78749","targets":["+1 (213) 691-4327"]},{"d":"2026-09-04","t":"10:12 AM","k":"2026-09-04 0612","i":177,"type":"add","actor":"+91 75013 51937","targets":["+91 86258 17957"]},{"d":"2026-09-04","t":"11:27 AM","k":"2026-09-04 0687","i":178,"type":"add","actor":"+91 98918 01010","targets":["+91 89233 97804"]},{"d":"2026-09-04","t":"12:49 PM","k":"2026-09-04 0769","i":179,"type":"add","actor":"+91 70068 34182","targets":["+91 79036 25853"]},{"d":"2026-09-04","t":"12:50 PM","k":"2026-09-04 0770","i":180,"type":"add","actor":"+91 70068 34182","targets":["+1 (662) 491-1387"]},{"d":"2026-09-04","t":"1:19 PM","k":"2026-09-04 0799","i":181,"type":"add","actor":"+86 151 3048 6381","targets":["+852 9678 5212"]},{"d":"2026-09-04","t":"1:21 PM","k":"2026-09-04 0801","i":182,"type":"add","actor":"+852 9678 5212","targets":["+852 5104 7133"]},{"d":"2026-09-04","t":"4:39 PM","k":"2026-09-04 0999","i":183,"type":"add","actor":"arya👺","targets":["+91 90032 98876"]},{"d":"2026-09-04","t":"8:52 PM","k":"2026-09-04 1252","i":184,"type":"add","actor":"+66 82 956 2857","targets":["+91 90032 98876"]},{"d":"2026-09-05","t":"1:50 AM","k":"2026-09-05 0110","i":185,"type":"add","actor":"arya👺","targets":["+91 63617 40228"]},{"d":"2026-09-05","t":"1:58 AM","k":"2026-09-05 0118","i":186,"type":"add","actor":"Rahil","targets":["+91 92638 34869"]},{"d":"2026-09-05","t":"1:06 PM","k":"2026-09-05 0786","i":188,"type":"add","actor":"arya👺","targets":["+86 177 7381 9892"]},{"d":"2026-09-05","t":"5:16 PM","k":"2026-09-05 1036","i":189,"type":"join","actor":null,"targets":["+91 97188 99444"]},{"d":"2026-09-06","t":"4:35 PM","k":"2026-09-06 0995","i":190,"type":"add","actor":"Himanshu","targets":["+91 84849 27787"]},{"d":"2026-09-06","t":"10:13 PM","k":"2026-09-06 1333","i":191,"type":"add","actor":"Muhammed Nafihe","targets":["+91 70259 61648"]},{"d":"2026-09-07","t":"12:05 PM","k":"2026-09-07 0725","i":192,"type":"add","actor":"+91 91751 46174","targets":["+91 76780 30695"]},{"d":"2026-09-07","t":"2:27 PM","k":"2026-09-07 0867","i":193,"type":"add","actor":"+66 82 956 2857","targets":["+86 182 1550 2023"]},{"d":"2026-09-07","t":"2:53 PM","k":"2026-09-07 0893","i":194,"type":"add","actor":"Aditya Gupta","targets":["+91 70191 90054"]},{"d":"2026-09-08","t":"11:16 AM","k":"2026-09-08 0676","i":195,"type":"add","actor":"+91 95217 99760","targets":["+91 95659 85859","+91 863 918 0914"]},{"d":"2026-09-08","t":"4:26 PM","k":"2026-09-08 0986","i":196,"type":"add","actor":"+91 863 918 0914","targets":["+91 93501 68280"]},{"d":"2026-09-08","t":"6:37 PM","k":"2026-09-08 1117","i":197,"type":"add","actor":"+91 98112 83137","targets":["+91 891 084 3970"]},{"d":"2026-09-08","t":"7:02 PM","k":"2026-09-08 1142","i":198,"type":"add","actor":"+91 891 084 3970","targets":["+91 99716 31031"]},{"d":"2026-09-09","t":"11:23 PM","k":"2026-09-09 1403","i":199,"type":"add","actor":"sadiya","targets":["Sadiya khan"]},{"d":"2026-09-09","t":"11:42 PM","k":"2026-09-09 1422","i":200,"type":"add","actor":"+1 (778) 323-4899","targets":["+1 (310) 854-2815"]},{"d":"2026-09-10","t":"10:56 AM","k":"2026-09-10 0656","i":201,"type":"join","actor":null,"targets":["+1 (929) 302-0598"]},{"d":"2026-09-10","t":"11:24 AM","k":"2026-09-10 0684","i":202,"type":"join","actor":null,"targets":["+1 (312) 961-4350"]},{"d":"2026-09-10","t":"6:29 PM","k":"2026-09-10 1109","i":203,"type":"add","actor":"+66 82 956 2857","targets":["+39 347 748 2399"]},{"d":"2026-09-11","t":"11:29 AM","k":"2026-09-11 0689","i":204,"type":"add","actor":"Bhartesh","targets":["+1 (628) 306-4165"]},{"d":"2026-09-11","t":"12:58 PM","k":"2026-09-11 0778","i":206,"type":"add","actor":"+91 98290 20407","targets":["+91 97725 76666"]},{"d":"2026-09-11","t":"3:40 PM","k":"2026-09-11 0940","i":207,"type":"add","actor":"+66 82 956 2857","targets":["+44 7448 848743"]},{"d":"2026-09-12","t":"7:08 AM","k":"2026-09-12 0428","i":208,"type":"add","actor":"+1 (310) 854-2815","targets":["+1 (774) 274-1081"]},{"d":"2026-09-12","t":"3:53 PM","k":"2026-09-12 0953","i":209,"type":"add","actor":"+66 82 956 2857","targets":["+91 96670 69790"]},{"d":"2026-09-12","t":"9:45 PM","k":"2026-09-12 1305","i":210,"type":"add","actor":"Kaif","targets":["Freddy"]},{"d":"2026-09-13","t":"1:10 AM","k":"2026-09-13 0070","i":211,"type":"add","actor":"+91 78929 88845","targets":["+91 80581 76503"]},{"d":"2026-09-13","t":"11:19 PM","k":"2026-09-13 1399","i":212,"type":"add","actor":"Shloak","targets":["+1 (469) 834-2088"]},{"d":"2026-09-13","t":"11:28 PM","k":"2026-09-13 1408","i":214,"type":"add","actor":"Shloak","targets":["+1 (469) 834-2225"]},{"d":"2026-09-14","t":"8:06 AM","k":"2026-09-14 0486","i":215,"type":"join","actor":null,"targets":["+1 (469) 834-2088"]},{"d":"2026-09-14","t":"7:41 PM","k":"2026-09-14 1181","i":216,"type":"add","actor":"+66 82 956 2857","targets":["+91 89042 72808"]},{"d":"2026-09-15","t":"7:14 PM","k":"2026-09-15 1154","i":218,"type":"add","actor":"+66 82 956 2857","targets":["+31 6 13320006"]},{"d":"2026-09-15","t":"11:48 PM","k":"2026-09-15 1428","i":219,"type":"add","actor":"Kaif","targets":["Rohan Kaif"]},{"d":"2026-09-16","t":"2:07 PM","k":"2026-09-16 0847","i":220,"type":"add","actor":"+91 92074 42707","targets":["+91 96345 78599"]},{"d":"2026-09-16","t":"2:08 PM","k":"2026-09-16 0848","i":222,"type":"add","actor":"+91 96345 78599","targets":["+91 99308 43288","+91 747 074 5603"]},{"d":"2026-09-16","t":"9:48 PM","k":"2026-09-16 1308","i":223,"type":"add","actor":"+66 82 956 2857","targets":["+1 (646) 346-0394"]},{"d":"2026-09-17","t":"1:07 AM","k":"2026-09-17 0067","i":224,"type":"add","actor":"aryaa bhatia","targets":["+1 (240) 474-7153"]},{"d":"2026-09-17","t":"2:41 PM","k":"2026-09-17 0881","i":225,"type":"add","actor":"+91 78929 88845","targets":["+91 90666 45662"]},{"d":"2026-09-17","t":"10:28 PM","k":"2026-09-17 1348","i":226,"type":"add","actor":"+66 82 956 2857","targets":["+32 473 88 01 77"]},{"d":"2026-09-18","t":"2:16 AM","k":"2026-09-18 0136","i":227,"type":"join","actor":null,"targets":["+91 83063 96969"]},{"d":"2026-09-18","t":"11:30 AM","k":"2026-09-18 0690","i":228,"type":"add","actor":"+91 83037 08386","targets":["+91 92363 77968"]},{"d":"2026-09-18","t":"4:15 PM","k":"2026-09-18 0975","i":229,"type":"add","actor":"+66 82 956 2857","targets":["+256 704 911529"]},{"d":"2026-09-18","t":"5:38 PM","k":"2026-09-18 1058","i":230,"type":"add","actor":"+32 473 88 01 77","targets":["@el_diwiny"]},{"d":"2026-09-18","t":"10:15 PM","k":"2026-09-18 1335","i":231,"type":"add","actor":"Himanshu","targets":["+91 88790 06193"]},{"d":"2026-09-18","t":"10:25 PM","k":"2026-09-18 1345","i":232,"type":"add","actor":"Aryan Agarwal","targets":["+91 95014 44026"]},{"d":"2026-09-19","t":"12:14 AM","k":"2026-09-19 0014","i":233,"type":"add","actor":"Manish A","targets":["Ryan KHAN"]},{"d":"2026-09-19","t":"12:19 AM","k":"2026-09-19 0019","i":234,"type":"add","actor":"+91 89042 72808","targets":["+91 95910 97869"]},{"d":"2026-09-19","t":"2:59 AM","k":"2026-09-19 0179","i":235,"type":"add","actor":"+1 (240) 474-7153","targets":["+1 (787) 525-7648"]},{"d":"2026-09-19","t":"3:39 PM","k":"2026-09-19 0939","i":236,"type":"add","actor":"Himanshu","targets":["Daksh Katkar"]},{"d":"2026-09-20","t":"1:29 AM","k":"2026-09-20 0089","i":237,"type":"join","actor":null,"targets":["+91 93463 59649"]},{"d":"2026-09-20","t":"6:56 AM","k":"2026-09-20 0416","i":238,"type":"add","actor":"+1 (630) 877-8923","targets":["+1 (765) 746-9987"]},{"d":"2026-09-21","t":"10:05 AM","k":"2026-09-21 0605","i":239,"type":"add","actor":"+66 82 956 2857","targets":["+1 (808) 756-5447"]},{"d":"2026-09-21","t":"5:14 PM","k":"2026-09-21 1034","i":240,"type":"add","actor":"+1 (808) 756-5447","targets":["+1 (647) 242-9962"]},{"d":"2026-09-22","t":"1:31 PM","k":"2026-09-22 0811","i":241,"type":"add","actor":"+91 93501 68280","targets":["+91 7419 056 212"]},{"d":"2026-09-22","t":"5:05 PM","k":"2026-09-22 1025","i":242,"type":"add","actor":"Aryan Agarwal","targets":["+91 95404 43424"]},{"d":"2026-09-22","t":"5:17 PM","k":"2026-09-22 1037","i":244,"type":"add","actor":"+91 93501 68280","targets":["2une by PHYSICS WALLAH"]},{"d":"2026-09-22","t":"5:50 PM","k":"2026-09-22 1070","i":245,"type":"add","actor":"Aryan Agarwal","targets":["+33 6 13 64 31 29"]},{"d":"2026-09-22","t":"8:45 PM","k":"2026-09-22 1245","i":246,"type":"add","actor":"+66 82 956 2857","targets":["+7 926 393-24-92"]},{"d":"2026-09-23","t":"2:05 AM","k":"2026-09-23 0125","i":247,"type":"add","actor":"Himanshu","targets":["+91 836 912 9131","+91 7426 019 793"]},{"d":"2026-09-23","t":"5:52 AM","k":"2026-09-23 0352","i":248,"type":"add","actor":"+1 (662) 491-1387","targets":["+55 32 8406-2623"]},{"d":"2026-09-23","t":"11:57 AM","k":"2026-09-23 0717","i":249,"type":"add","actor":"+91 97915 28786","targets":["+1 (312) 975-5961"]},{"d":"2026-09-23","t":"2:24 PM","k":"2026-09-23 0864","i":250,"type":"add","actor":"+972 54-260-0851","targets":["+972 58-783-2027"]},{"d":"2026-09-23","t":"3:15 PM","k":"2026-09-23 0915","i":251,"type":"add","actor":"2une by PHYSICS WALLAH","targets":["+91 96186 75771","+91 70367 35771"]},{"d":"2026-09-24","t":"10:41 AM","k":"2026-09-24 0641","i":252,"type":"add","actor":"+66 82 956 2857","targets":["+7 999 200-35-49"]},{"d":"2026-09-24","t":"10:43 AM","k":"2026-09-24 0643","i":254,"type":"add","actor":"+66 82 956 2857","targets":["+7 985 425-54-98"]},{"d":"2026-09-24","t":"4:00 PM","k":"2026-09-24 0960","i":255,"type":"add","actor":"+977 982-1118182","targets":["+977 974-4258311"]},{"d":"2026-09-24","t":"4:46 PM","k":"2026-09-24 1006","i":256,"type":"add","actor":"+1 (662) 491-1387","targets":["+91 80901 21258"]},{"d":"2026-09-24","t":"7:50 PM","k":"2026-09-24 1190","i":257,"type":"add","actor":"+66 82 956 2857","targets":["+91 80856 76100"]},{"d":"2026-09-25","t":"2:42 PM","k":"2026-09-25 0882","i":258,"type":"add","actor":"+66 82 956 2857","targets":["+1 (647) 786-4023"]},{"d":"2026-09-25","t":"3:01 PM","k":"2026-09-25 0901","i":259,"type":"add","actor":"+91 87508 37525","targets":["+91 99157 03111"]},{"d":"2026-09-25","t":"8:11 PM","k":"2026-09-25 1211","i":261,"type":"add","actor":"Md Arsalan","targets":["+91 85118 75749"]},{"d":"2026-09-25","t":"8:40 PM","k":"2026-09-25 1240","i":262,"type":"add","actor":"Dhruv","targets":["+91 82910 00604"]},{"d":"2026-09-25","t":"9:55 PM","k":"2026-09-25 1315","i":263,"type":"add","actor":"+91 82910 00604","targets":["+91 91526 96691"]},{"d":"2026-09-25","t":"11:45 PM","k":"2026-09-25 1425","i":264,"type":"add","actor":"Bhartesh","targets":["+91 79088 23345"]},{"d":"2026-09-26","t":"12:05 AM","k":"2026-09-26 0005","i":265,"type":"add","actor":"Aryan Agarwal","targets":["+1 (404) 421-5010"]},{"d":"2026-09-26","t":"1:22 AM","k":"2026-09-26 0082","i":266,"type":"add","actor":"+1 (404) 421-5010","targets":["+91 99611 89813"]},{"d":"2026-09-26","t":"6:44 AM","k":"2026-09-26 0404","i":267,"type":"add","actor":"+91 70367 35771","targets":["+91 70936 92818"]},{"d":"2026-09-27","t":"1:50 AM","k":"2026-09-27 0110","i":269,"type":"add","actor":"+91 91526 96691","targets":["Mirthika"]},{"d":"2026-09-27","t":"10:46 AM","k":"2026-09-27 0646","i":271,"type":"add","actor":"+91 77961 37098","targets":["+91 7498 348 817"]},{"d":"2026-09-27","t":"8:13 PM","k":"2026-09-27 1213","i":272,"type":"add","actor":"+91 96966 13452","targets":["+91 63976 71679"]},{"d":"2026-09-27","t":"10:48 PM","k":"2026-09-27 1368","i":273,"type":"add","actor":"+91 95215 04222","targets":["+91 99972 99972"]},{"d":"2026-09-27","t":"11:01 PM","k":"2026-09-27 1381","i":274,"type":"add","actor":"+91 95014 44026","targets":["+91 78798 69293"]},{"d":"2026-09-28","t":"4:43 PM","k":"2026-09-28 1003","i":275,"type":"add","actor":"+91 63976 71679","targets":["+91 884 903 9086"]},{"d":"2026-09-29","t":"10:36 AM","k":"2026-09-29 0636","i":277,"type":"add","actor":"+91 88790 06193","targets":["+91 93408 31323"]},{"d":"2026-09-30","t":"2:34 PM","k":"2026-09-30 0874","i":278,"type":"add","actor":"+1 (662) 491-1387","targets":["+971 55 941 6537"]},{"d":"2026-09-30","t":"2:35 PM","k":"2026-09-30 0875","i":279,"type":"add","actor":"+971 55 941 6537","targets":["+91 78797 92872"]},{"d":"2026-09-30","t":"6:12 PM","k":"2026-09-30 1092","i":280,"type":"add","actor":"+7 991 243-12-70","targets":["+995 599 36 69 40"]},{"d":"2026-09-30","t":"7:16 PM","k":"2026-09-30 1156","i":281,"type":"add","actor":"+91 79088 23345","targets":["+91 99129 06381"]},{"d":"2026-09-30","t":"10:22 PM","k":"2026-09-30 1342","i":282,"type":"add","actor":"+61 466 256 219","targets":["Eric Lee"]},{"d":"2026-10-01","t":"10:53 AM","k":"2026-10-01 0653","i":283,"type":"add","actor":"+66 82 956 2857","targets":["+1 (617) 256-1719"]},{"d":"2026-10-01","t":"11:16 AM","k":"2026-10-01 0676","i":284,"type":"add","actor":"Shreyash","targets":["+91 86011 51424"]},{"d":"2026-10-01","t":"12:02 PM","k":"2026-10-01 0722","i":285,"type":"add","actor":"+66 82 956 2857","targets":["+374 55 807583"]},{"d":"2026-10-01","t":"2:07 PM","k":"2026-10-01 0847","i":286,"type":"add","actor":"+91 79036 25853","targets":["Aman"]},{"d":"2026-10-01","t":"3:44 PM","k":"2026-10-01 0944","i":287,"type":"add","actor":"+91 95404 43424","targets":["+91 79828 49134"]},{"d":"2026-10-01","t":"5:01 PM","k":"2026-10-01 1021","i":288,"type":"add","actor":"+977 982-1534312","targets":["+91 80881 88658"]},{"d":"2026-10-01","t":"5:15 PM","k":"2026-10-01 1035","i":289,"type":"add","actor":"+91 98202 14290","targets":["+91 99679 75750"]},{"d":"2026-10-02","t":"12:44 PM","k":"2026-10-02 0764","i":290,"type":"add","actor":"@denisengu","targets":["@junglemandan"]},{"d":"2026-10-02","t":"2:19 PM","k":"2026-10-02 0859","i":291,"type":"add","actor":"+66 82 956 2857","targets":["+886 909 727 975"]},{"d":"2026-10-02","t":"2:19 PM","k":"2026-10-02 0859","i":292,"type":"rename","actor":"+66 82 956 2857","text":"📂 FileMarket (Physical AI Data)"},{"d":"2026-10-02","t":"11:49 PM","k":"2026-10-02 1429","i":293,"type":"add","actor":"Bhartesh","targets":["+1 (484) 682-9355","+1 (425) 748-4096"]},{"d":"2026-10-04","t":"4:49 PM","k":"2026-10-04 1009","i":294,"type":"add","actor":"+91 91526 96691","targets":["egodata.si"]},{"d":"2026-10-05","t":"6:24 AM","k":"2026-10-05 0384","i":295,"type":"join","actor":null,"targets":["+234 803 284 8928"]},{"d":"2026-10-05","t":"8:48 PM","k":"2026-10-05 1248","i":296,"type":"add","actor":"Shloak","targets":["Joey Newfield","Joshua Mesnik"]},{"d":"2026-10-06","t":"12:29 PM","k":"2026-10-06 0749","i":297,"type":"add","actor":"+66 82 956 2857","targets":["+62 812-3037-4388"]},{"d":"2026-10-06","t":"9:26 PM","k":"2026-10-06 1286","i":298,"type":"add","actor":"Shloak","targets":["Data"]},{"d":"2026-10-07","t":"11:23 AM","k":"2026-10-07 0683","i":299,"type":"add","actor":"+91 77109 36213","targets":["+91 91027 33866"]},{"d":"2026-10-07","t":"1:39 PM","k":"2026-10-07 0819","i":300,"type":"add","actor":"Ray Wang","targets":["+1 (213) 709-0517"]},{"d":"2026-10-07","t":"9:43 PM","k":"2026-10-07 1303","i":301,"type":"add","actor":"+66 82 956 2857","targets":["+1 (704) 609-8206"]},{"d":"2026-10-07","t":"10:21 PM","k":"2026-10-07 1341","i":302,"type":"add","actor":"+66 82 956 2857","targets":["+91 97521 33825"]},{"d":"2026-10-07","t":"10:26 PM","k":"2026-10-07 1346","i":303,"type":"join","actor":null,"targets":["+1 (425) 208-9116"]},{"d":"2026-10-07","t":"11:25 PM","k":"2026-10-07 1405","i":304,"type":"add","actor":"+66 82 956 2857","targets":["+86 130 1368 1882"]},{"d":"2026-10-08","t":"6:46 AM","k":"2026-10-08 0406","i":305,"type":"add","actor":"Shreenabh","targets":["+91 7708 293 783"]},{"d":"2026-10-08","t":"1:40 PM","k":"2026-10-08 0820","i":306,"type":"add","actor":"+66 82 956 2857","targets":["+1 (850) 743-0549"]},{"d":"2026-10-08","t":"4:21 PM","k":"2026-10-08 0981","i":307,"type":"add","actor":"+91 77339 07777","targets":["+91 99295 91587"]},{"d":"2026-10-08","t":"4:25 PM","k":"2026-10-08 0985","i":308,"type":"add","actor":"+66 82 956 2857","targets":["+91 95400 14357","+91 79022 85119"]},{"d":"2026-10-08","t":"8:03 PM","k":"2026-10-08 1203","i":309,"type":"add","actor":"+66 82 956 2857","targets":["+82 10-5702-0298"]},{"d":"2026-10-09","t":"11:12 AM","k":"2026-10-09 0672","i":311,"type":"add","actor":"+66 82 956 2857","targets":["+86 186 0717 8906"]},{"d":"2026-10-09","t":"11:13 AM","k":"2026-10-09 0673","i":312,"type":"remove","actor":"+66 82 956 2857","targets":["+66 61 293 5801"]},{"d":"2026-10-09","t":"11:16 AM","k":"2026-10-09 0676","i":313,"type":"add","actor":"+66 82 956 2857","targets":["+81 70-4311-7191"]},{"d":"2026-10-09","t":"3:00 PM","k":"2026-10-09 0900","i":314,"type":"add","actor":"+66 82 956 2857","targets":["+91 6291 031 538"]},{"d":"2026-10-09","t":"3:29 PM","k":"2026-10-09 0929","i":315,"type":"add","actor":"+91 77109 36213","targets":["avinash"]},{"d":"2026-10-10","t":"8:47 AM","k":"2026-10-10 0527","i":316,"type":"add","actor":"+1 (617) 256-1719","targets":["+1 (603) 349-0494"]},{"d":"2026-10-10","t":"4:04 PM","k":"2026-10-10 0964","i":317,"type":"add","actor":"+91 79828 49134","targets":["+91 76720 00600"]},{"d":"2026-10-10","t":"6:07 PM","k":"2026-10-10 1087","i":318,"type":"add","actor":"+91 77961 37098","targets":["+44 7825 600683"]},{"d":"2026-10-10","t":"10:23 PM","k":"2026-10-10 1343","i":319,"type":"add","actor":"+91 94821 90680","targets":["+91 863 946 2360"]},{"d":"2026-10-11","t":"12:04 PM","k":"2026-10-11 0724","i":320,"type":"add","actor":"+91 95910 97869","targets":["+91 91130 56069"]}],"msgs":{"Praveen Babu":{"n":19,"first":"2026-07-17","last":"2026-10-08"},"+91 81304 88807":{"n":20,"first":"2026-07-17","last":"2026-10-07"},"+91 96963 95179":{"n":8,"first":"2026-07-17","last":"2026-09-20"},"You":{"n":27,"first":"2026-07-17","last":"2026-09-27"},"+91 70007 38842":{"n":14,"first":"2026-07-17","last":"2026-09-25"},"+91 94641 48065":{"n":4,"first":"2026-07-18","last":"2026-07-23"},"Sumit Yadav":{"n":2,"first":"2026-07-18","last":"2026-09-18"},"Praveen":{"n":14,"first":"2026-07-18","last":"2026-08-01"},"Artem":{"n":7,"first":"2026-07-18","last":"2026-08-27"},"Puneet Ego":{"n":25,"first":"2026-07-18","last":"2026-10-08"},"Pritish Bagdi":{"n":14,"first":"2026-07-18","last":"2026-10-05"},"+91 870 814 2128":{"n":1,"first":"2026-07-18","last":"2026-07-18"},"Raj":{"n":9,"first":"2026-07-18","last":"2026-10-10"},"Anirudh Sachdeva":{"n":53,"first":"2026-07-18","last":"2026-10-07"},"Vardhan":{"n":18,"first":"2026-07-18","last":"2026-10-06"},"+91 83939 59750":{"n":23,"first":"2026-07-18","last":"2026-10-04"},"David Miller I Robot Data":{"n":53,"first":"2026-07-19","last":"2026-10-09"},"+91 83076 92946":{"n":8,"first":"2026-07-19","last":"2026-09-08"},"Priyesh":{"n":3,"first":"2026-07-19","last":"2026-08-14"},"Md Arsalan":{"n":12,"first":"2026-07-19","last":"2026-10-11"},"+91 88829 06555":{"n":6,"first":"2026-07-19","last":"2026-08-19"},"Aditya Gupta":{"n":11,"first":"2026-07-19","last":"2026-10-04"},"Nitish":{"n":7,"first":"2026-07-19","last":"2026-07-23"},"Gagan":{"n":7,"first":"2026-07-19","last":"2026-09-04"},"+91 99005 10100":{"n":6,"first":"2026-07-20","last":"2026-07-31"},"+91 97818 04819":{"n":4,"first":"2026-07-20","last":"2026-10-08"},"+91 98780 67778":{"n":3,"first":"2026-07-20","last":"2026-09-07"},"Sayed":{"n":38,"first":"2026-07-20","last":"2026-10-09"},"+66 82 956 2857":{"n":116,"first":"2026-07-20","last":"2026-10-10"},"+91 83550 55414":{"n":17,"first":"2026-07-20","last":"2026-09-28"},"+91 80587 54773":{"n":10,"first":"2026-07-20","last":"2026-10-09"},"Bhartesh":{"n":8,"first":"2026-07-20","last":"2026-10-02"},"+234 816 852 4081":{"n":7,"first":"2026-07-20","last":"2026-09-04"},"+91 76948 87048":{"n":11,"first":"2026-07-21","last":"2026-10-08"},"+91 836 016 8458":{"n":6,"first":"2026-07-21","last":"2026-09-03"},"+91 83407 83568":{"n":4,"first":"2026-07-21","last":"2026-07-25"},"+90 507 970 97 20":{"n":3,"first":"2026-07-21","last":"2026-08-19"},"Thomas":{"n":9,"first":"2026-07-21","last":"2026-10-06"},"+61 414 452 875":{"n":1,"first":"2026-07-21","last":"2026-07-21"},"Jetsadakorn Hsieh (Benz)":{"n":4,"first":"2026-07-22","last":"2026-07-30"},"+91 91797 78510":{"n":4,"first":"2026-07-22","last":"2026-08-14"},"+91 82338 89440":{"n":4,"first":"2026-07-22","last":"2026-08-30"},"+91 98784 51745":{"n":1,"first":"2026-07-22","last":"2026-07-22"},"+91 820 937 8345":{"n":1,"first":"2026-07-22","last":"2026-07-22"},"+86 151 3048 6381":{"n":8,"first":"2026-07-22","last":"2026-09-04"},"Ray Wang":{"n":18,"first":"2026-07-22","last":"2026-10-09"},"Vivek Vishwakarma":{"n":8,"first":"2026-07-22","last":"2026-07-28"},"+86 157 7900 5235":{"n":7,"first":"2026-07-22","last":"2026-09-02"},"Abdul Azam":{"n":3,"first":"2026-07-22","last":"2026-07-31"},"Cristian Meo":{"n":23,"first":"2026-07-22","last":"2026-08-29"},"Abhinav Yadav":{"n":12,"first":"2026-07-22","last":"2026-09-29"},"Ashutosh Kashyap":{"n":13,"first":"2026-07-23","last":"2026-10-11"},"+234 816 352 2478":{"n":8,"first":"2026-07-23","last":"2026-08-20"},"Sumit Sinha Omni":{"n":3,"first":"2026-07-23","last":"2026-07-30"},"+92 306 5875969":{"n":14,"first":"2026-07-23","last":"2026-09-18"},"+91 70235 46471":{"n":2,"first":"2026-07-23","last":"2026-07-31"},"Tyler Mose":{"n":11,"first":"2026-07-23","last":"2026-09-30"},"+91 747 042 0632":{"n":37,"first":"2026-07-23","last":"2026-10-09"},"+91 88029 45034":{"n":11,"first":"2026-07-23","last":"2026-08-31"},"+977 984-9701570":{"n":1,"first":"2026-07-23","last":"2026-07-23"},"Priyank":{"n":2,"first":"2026-07-23","last":"2026-08-14"},"+91 98290 20407":{"n":1,"first":"2026-07-24","last":"2026-07-24"},"James Kuj":{"n":3,"first":"2026-07-24","last":"2026-08-14"},"Ishan":{"n":2,"first":"2026-07-24","last":"2026-08-19"},"+91 99532 60592":{"n":9,"first":"2026-07-25","last":"2026-09-21"},"Shreyash":{"n":12,"first":"2026-07-25","last":"2026-09-17"},"+91 99778 82422":{"n":4,"first":"2026-07-25","last":"2026-10-06"},"@HadeelSoliman":{"n":2,"first":"2026-07-25","last":"2026-08-27"},"+91 84398 43648":{"n":9,"first":"2026-07-25","last":"2026-09-26"},"+91 98201 57550":{"n":4,"first":"2026-07-25","last":"2026-09-22"},"Andreas":{"n":6,"first":"2026-07-27","last":"2026-09-22"},"+90 539 696 97 20":{"n":1,"first":"2026-07-27","last":"2026-07-27"},"Rushil Agarwal":{"n":10,"first":"2026-07-28","last":"2026-07-28"},"Александр Громов":{"n":4,"first":"2026-07-28","last":"2026-10-05"},"Muhammed Nafihe":{"n":4,"first":"2026-07-28","last":"2026-09-03"},"+44 7780 278858":{"n":1,"first":"2026-07-28","last":"2026-07-28"},"Abhishek Anand":{"n":2,"first":"2026-07-28","last":"2026-10-08"},"Aditya":{"n":29,"first":"2026-07-28","last":"2026-09-25"},"+91 91034 34915":{"n":3,"first":"2026-07-28","last":"2026-08-30"},"Diego Pousa":{"n":1,"first":"2026-07-29","last":"2026-07-29"},"Satyam Sahil":{"n":7,"first":"2026-07-29","last":"2026-09-22"},"+91 99304 28222":{"n":15,"first":"2026-07-30","last":"2026-10-09"},"+91 8075 474 956":{"n":6,"first":"2026-07-30","last":"2026-10-08"},"+1 (478) 263-7625":{"n":2,"first":"2026-07-30","last":"2026-07-30"},"Chih Hsuan Wu":{"n":1,"first":"2026-07-31","last":"2026-07-31"},"aryaa bhatia":{"n":19,"first":"2026-07-31","last":"2026-09-30"},"+91 87640 01234":{"n":12,"first":"2026-07-31","last":"2026-10-10"},"Shaharba":{"n":3,"first":"2026-07-31","last":"2026-09-02"},"+44 7801 499655":{"n":1,"first":"2026-07-31","last":"2026-07-31"},"Dhruv":{"n":4,"first":"2026-07-31","last":"2026-10-07"},"+91 70110 55467":{"n":10,"first":"2026-07-31","last":"2026-09-28"},"Garv FH":{"n":1,"first":"2026-07-31","last":"2026-07-31"},"+7 964 181-11-66":{"n":2,"first":"2026-07-31","last":"2026-09-17"},"+91 77339 07777":{"n":3,"first":"2026-07-31","last":"2026-08-17"},"+91 76656 90008":{"n":1,"first":"2026-08-01","last":"2026-08-01"},"+91 96975 64578":{"n":2,"first":"2026-08-01","last":"2026-09-03"},"+91 7654 110 006":{"n":1,"first":"2026-08-01","last":"2026-08-01"},"+86 158 9976 5636":{"n":5,"first":"2026-08-01","last":"2026-08-01"},"+91 98199 54448":{"n":16,"first":"2026-08-02","last":"2026-09-30"},"Shloak":{"n":19,"first":"2026-08-06","last":"2026-10-11"},"+91 75749 98456":{"n":8,"first":"2026-08-06","last":"2026-09-25"},"Rahil":{"n":4,"first":"2026-08-07","last":"2026-08-27"},"Yash Shah":{"n":7,"first":"2026-08-07","last":"2026-10-09"},"+91 99084 60566":{"n":4,"first":"2026-08-07","last":"2026-09-16"},"Rory Walsh":{"n":1,"first":"2026-08-07","last":"2026-08-07"},"+91 98915 32505":{"n":8,"first":"2026-08-07","last":"2026-10-11"},"+213 795 76 58 50":{"n":2,"first":"2026-08-08","last":"2026-08-08"},"Tom Farrugia":{"n":5,"first":"2026-08-08","last":"2026-09-29"},"Dipesh Garg":{"n":3,"first":"2026-08-08","last":"2026-08-22"},"+91 878 968 6667":{"n":2,"first":"2026-08-09","last":"2026-08-09"},"+91 91214 47110":{"n":1,"first":"2026-08-09","last":"2026-08-09"},"+1 (650) 537-8300":{"n":3,"first":"2026-08-10","last":"2026-09-07"},"+977 980-2596992":{"n":2,"first":"2026-08-10","last":"2026-09-16"},"+86 187 0816 7547":{"n":7,"first":"2026-08-11","last":"2026-09-21"},"+1 (646) 945-6223":{"n":5,"first":"2026-08-11","last":"2026-10-06"},"+91 62391 46809":{"n":2,"first":"2026-08-11","last":"2026-09-24"},"Oleg":{"n":13,"first":"2026-08-12","last":"2026-10-09"},"+91 95755 17047":{"n":4,"first":"2026-08-12","last":"2026-09-21"},"Mahid":{"n":1,"first":"2026-08-12","last":"2026-08-12"},"+91 87508 37525":{"n":22,"first":"2026-08-12","last":"2026-10-08"},"+91 86025 51446":{"n":1,"first":"2026-08-13","last":"2026-08-13"},"+7 922 223-23-95":{"n":1,"first":"2026-08-13","last":"2026-08-13"},"Marie Roohi":{"n":2,"first":"2026-08-13","last":"2026-09-11"},"Shreenabh":{"n":5,"first":"2026-08-14","last":"2026-10-08"},"+1 (310) 896-6923":{"n":1,"first":"2026-08-14","last":"2026-08-14"},"+91 99404 62219":{"n":2,"first":"2026-08-15","last":"2026-10-05"},"+977 982-1534312":{"n":7,"first":"2026-08-15","last":"2026-10-10"},"Manish A":{"n":7,"first":"2026-08-17","last":"2026-10-08"},"+91 870 785 1667":{"n":1,"first":"2026-08-18","last":"2026-08-18"},"+91 84749 24999":{"n":1,"first":"2026-08-18","last":"2026-08-18"},"Shashwat shukla":{"n":1,"first":"2026-08-19","last":"2026-08-19"},"+91 80174 02088":{"n":3,"first":"2026-08-19","last":"2026-10-08"},"Veer Parikh":{"n":1,"first":"2026-08-19","last":"2026-08-19"},"swapnil saha":{"n":1,"first":"2026-08-19","last":"2026-08-19"},"+91 88770 63620":{"n":2,"first":"2026-08-19","last":"2026-08-19"},"+1 (305) 497-1554":{"n":2,"first":"2026-08-19","last":"2026-08-20"},"+49 1511 2928530":{"n":1,"first":"2026-08-21","last":"2026-08-21"},"Arjun Raj Jain":{"n":3,"first":"2026-08-21","last":"2026-09-17"},"+91 98112 83137":{"n":4,"first":"2026-08-21","last":"2026-09-17"},"+91 90054 44377":{"n":3,"first":"2026-08-22","last":"2026-09-18"},"+91 88819 20469":{"n":1,"first":"2026-08-23","last":"2026-08-23"},"Dylan":{"n":1,"first":"2026-08-24","last":"2026-08-24"},"Shlomo Stark":{"n":1,"first":"2026-08-25","last":"2026-08-25"},"+91 97419 85101":{"n":7,"first":"2026-08-26","last":"2026-10-08"},"Eshan alam":{"n":18,"first":"2026-08-26","last":"2026-09-26"},"+91 78929 88845":{"n":4,"first":"2026-08-26","last":"2026-09-17"},"Sam (the passing lad)":{"n":1,"first":"2026-08-26","last":"2026-08-26"},"Harshith Murthy":{"n":2,"first":"2026-08-27","last":"2026-10-08"},"+91 83092 90612":{"n":12,"first":"2026-08-28","last":"2026-09-29"},"+91 70816 09878":{"n":37,"first":"2026-08-30","last":"2026-10-09"},"Aryan Agarwal":{"n":3,"first":"2026-08-30","last":"2026-09-26"},"+91 94821 90680":{"n":2,"first":"2026-08-30","last":"2026-10-10"},"+972 54-260-0851":{"n":3,"first":"2026-08-31","last":"2026-09-23"},"deepit":{"n":2,"first":"2026-08-31","last":"2026-09-01"},"Himanshu":{"n":5,"first":"2026-08-31","last":"2026-09-23"},"+852 6760 2422":{"n":6,"first":"2026-08-31","last":"2026-09-12"},"+39 339 839 3540":{"n":1,"first":"2026-09-01","last":"2026-09-01"},"Caio Såbra":{"n":1,"first":"2026-09-02","last":"2026-09-02"},"+977 982-1118182":{"n":3,"first":"2026-09-02","last":"2026-09-24"},"+86 132 5836 6920":{"n":22,"first":"2026-09-02","last":"2026-10-08"},"Sahdev":{"n":1,"first":"2026-09-02","last":"2026-09-02"},"Hari":{"n":2,"first":"2026-09-04","last":"2026-09-21"},"+91 87924 78749":{"n":3,"first":"2026-09-04","last":"2026-09-10"},"arya👺":{"n":6,"first":"2026-09-04","last":"2026-10-04"},"+91 75013 51937":{"n":1,"first":"2026-09-04","last":"2026-09-04"},"+1 (662) 491-1387":{"n":9,"first":"2026-09-04","last":"2026-09-30"},"+91 79036 25853":{"n":5,"first":"2026-09-05","last":"2026-09-15"},"+91 84849 27787":{"n":1,"first":"2026-09-07","last":"2026-09-07"},"+91 92638 34869":{"n":4,"first":"2026-09-08","last":"2026-09-27"},"+91 95217 99760":{"n":4,"first":"2026-09-08","last":"2026-09-08"},"+91 863 918 0914":{"n":1,"first":"2026-09-08","last":"2026-09-08"},"+91 87667 29978":{"n":3,"first":"2026-09-08","last":"2026-09-18"},"+91 63617 40228":{"n":2,"first":"2026-09-09","last":"2026-09-09"},"+91 99898 77899":{"n":3,"first":"2026-09-10","last":"2026-09-10"},"+91 63075 09461":{"n":5,"first":"2026-09-10","last":"2026-10-08"},"+91 891 084 3970":{"n":2,"first":"2026-09-10","last":"2026-09-11"},"+66 61 293 5801":{"n":2,"first":"2026-09-12","last":"2026-09-12"},"Sadiya khan":{"n":7,"first":"2026-09-14","last":"2026-10-05"},"+91 92074 42707":{"n":1,"first":"2026-09-15","last":"2026-09-15"},"+1 (469) 834-2088":{"n":9,"first":"2026-09-15","last":"2026-09-29"},"+1 (929) 302-0598":{"n":2,"first":"2026-09-15","last":"2026-09-22"},"+1 (646) 346-0394":{"n":4,"first":"2026-09-16","last":"2026-10-07"},"+32 473 88 01 77":{"n":1,"first":"2026-09-18","last":"2026-09-18"},"+91 92363 77968":{"n":1,"first":"2026-09-18","last":"2026-09-18"},"+91 81976 81360":{"n":2,"first":"2026-09-18","last":"2026-09-18"},"+91 97188 99444":{"n":4,"first":"2026-09-18","last":"2026-09-19"},"+91 89042 72808":{"n":3,"first":"2026-09-19","last":"2026-10-04"},"+91 93463 59649":{"n":3,"first":"2026-09-20","last":"2026-09-26"},"+1 (630) 877-8923":{"n":1,"first":"2026-09-20","last":"2026-09-20"},"+1 (765) 746-9987":{"n":2,"first":"2026-09-21","last":"2026-09-28"},"+91 62324 04152":{"n":2,"first":"2026-09-21","last":"2026-10-11"},"+91 747 074 5603":{"n":2,"first":"2026-09-22","last":"2026-10-01"},"+91 7419 056 212":{"n":1,"first":"2026-09-22","last":"2026-09-22"},"+33 6 13 64 31 29":{"n":1,"first":"2026-09-22","last":"2026-09-22"},"2une by PHYSICS WALLAH":{"n":1,"first":"2026-09-23","last":"2026-09-23"},"+91 90666 45662":{"n":2,"first":"2026-09-25","last":"2026-09-27"},"+1 (404) 421-5010":{"n":1,"first":"2026-09-26","last":"2026-09-26"},"+91 85118 75749":{"n":3,"first":"2026-09-26","last":"2026-10-05"},"Bob Mardanov":{"n":2,"first":"2026-09-26","last":"2026-09-26"},"+91 7498 348 817":{"n":8,"first":"2026-09-27","last":"2026-10-03"},"+91 95404 43424":{"n":2,"first":"2026-09-27","last":"2026-09-30"},"+91 95215 04222":{"n":1,"first":"2026-09-27","last":"2026-09-27"},"+977 974-4258311":{"n":3,"first":"2026-09-28","last":"2026-09-30"},"+1 (628) 306-4165":{"n":1,"first":"2026-09-30","last":"2026-09-30"},"+7 991 243-12-70":{"n":1,"first":"2026-09-30","last":"2026-09-30"},"+91 81123 74987":{"n":1,"first":"2026-09-30","last":"2026-09-30"},"+91 93593 05009":{"n":1,"first":"2026-09-30","last":"2026-09-30"},"Eric Lee":{"n":2,"first":"2026-09-30","last":"2026-10-08"},"+91 98202 14290":{"n":1,"first":"2026-10-01","last":"2026-10-01"},"+91 79828 49134":{"n":5,"first":"2026-10-01","last":"2026-10-10"},"@karki172":{"n":1,"first":"2026-10-02","last":"2026-10-02"},"+91 70259 61648":{"n":1,"first":"2026-10-02","last":"2026-10-02"},"+91 99679 75750":{"n":1,"first":"2026-10-02","last":"2026-10-02"},"+91 95014 44026":{"n":4,"first":"2026-10-03","last":"2026-10-08"},"+91 83063 96969":{"n":1,"first":"2026-10-04","last":"2026-10-04"},"+91 836 912 9131":{"n":6,"first":"2026-10-04","last":"2026-10-08"},"+91 95067 10053":{"n":3,"first":"2026-10-04","last":"2026-10-04"},"+91 88790 06193":{"n":3,"first":"2026-10-04","last":"2026-10-11"},"+91 77961 37098":{"n":3,"first":"2026-10-05","last":"2026-10-10"},"egodata.si":{"n":3,"first":"2026-10-06","last":"2026-10-07"},"+91 99308 43288":{"n":3,"first":"2026-10-06","last":"2026-10-09"},"+91 77109 36213":{"n":2,"first":"2026-10-07","last":"2026-10-09"},"+1 (704) 609-8206":{"n":1,"first":"2026-10-07","last":"2026-10-07"},"+1 (213) 709-0517":{"n":1,"first":"2026-10-08","last":"2026-10-08"},"+91 99972 99972":{"n":1,"first":"2026-10-08","last":"2026-10-08"},"+91 95400 14357":{"n":3,"first":"2026-10-08","last":"2026-10-08"},"+1 (425) 208-9116":{"n":2,"first":"2026-10-08","last":"2026-10-08"},"+82 10-5702-0298":{"n":2,"first":"2026-10-08","last":"2026-10-10"},"+86 182 1550 2023":{"n":1,"first":"2026-10-10","last":"2026-10-10"},"+1 (808) 756-5447":{"n":1,"first":"2026-10-11","last":"2026-10-11"},"+61 466 256 219":{"n":1,"first":"2026-10-11","last":"2026-10-11"},"+86 130 1368 1882":{"n":4,"first":"2026-10-11","last":"2026-10-11"}}};
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmtD = d => { const [y,m,dd] = d.split('-'); return `${MON[+m-1]} ${+dd}, ${y}`; };
+const fmtDT = e => `${fmtD(e.d)} · ${e.t}`;
+const isPhone = n => /^[+@]/.test(n);
+const alias = n => isPhone(n) ? NAMES[n.replace(/\D/g, '')] || null : null;
+const aliasText = a => !a ? '' : a.p ? `~${a.p}` : `${a.s} (saved contact)`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ---------- Build the people graph ----------
+const P = new Map();
+const person = n => { if (!P.has(n)) P.set(n, { name: n, entry: null, hist: [], kids: [], firstAct: null, parent: null, pre: false }); return P.get(n); };
+const evs = DATA.events.slice().sort((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : a.i - b.i);
+const isAncestor = (anc, n) => { for (let p = n; p; p = p.parent) if (p === anc) return true; return false; };
+
+for (const e of evs) {
+  if (e.actor && e.actor !== 'Someone' && e.type !== 'create') { const a = person(e.actor); if (!a.entry && !a.firstAct) a.firstAct = e; }
+  if (e.type === 'create') { const y = person('You'); y.entry = { e, via: 'create' }; y.hist.push({ e, kind: 'create' }); continue; }
+  if (e.type === 'add' || e.type === 'join') {
+    for (const t of e.targets) {
+      const p = person(t);
+      const via = e.type === 'join' ? 'link' : e.actor === 'Someone' ? 'someone' : 'add';
+      p.hist.push({ e, kind: via, by: e.type === 'add' ? e.actor : null });
+      if (p.entry) continue;
+      if (p.firstAct) { p.pre = true; continue; }     // already active before this add: a re-add of an existing member
+      const adder = via === 'add' ? person(e.actor) : null;
+      if (adder && isAncestor(p, adder)) { p.pre = true; continue; }
+      p.entry = { e, via };
+      if (adder) { p.parent = adder; adder.kids.push({ p, e }); }
+    }
+  }
+  if (e.type === 'remove') for (const t of e.targets) person(t).hist.push({ e, kind: 'removed', by: e.actor });
+  if (e.type === 'left') person(e.actor).hist.push({ e, kind: 'left' });
+}
+// Who acted before ever being added = member before the log
+for (const p of P.values()) if (!p.entry) p.pre = true;
+
+// Final status from last membership event
+for (const p of P.values()) {
+  const last = p.hist.filter(h => h.kind !== 'create').at(-1);
+  p.status = !last ? 'in' : (last.kind === 'removed' ? 'removed' : last.kind === 'left' ? 'left' : 'in');
+  p.readded = p.hist.filter(h => ['add','link','someone'].includes(h.kind)).length > 1;
+}
+// Network sizes
+const size = p => p._size ??= p.kids.reduce((s, k) => s + 1 + size(k.p), 0);
+for (const p of P.values()) size(p);
+
+// Top-level folders
+const ROOTS = [
+  { id: 'g-you', title: 'You', sub: 'Created the group · Sep 23, 2025', people: [P.get('You')], group: false },
+  { id: 'g-pre', title: 'In the group before the log', sub: 'Already members when the history starts', people: [...P.values()].filter(p => p.pre && p.name !== 'You' && (p.kids.length || p.firstAct)) },
+  { id: 'g-link', title: 'Joined via invite link', sub: 'No one added them', people: [...P.values()].filter(p => p.entry?.via === 'link') },
+  { id: 'g-some', title: 'Added by “Someone”', sub: 'WhatsApp did not name the adder', people: [...P.values()].filter(p => p.entry?.via === 'someone') },
+];
+// Pre-log members who never added anyone but were removed or left still deserve a row
+for (const p of P.values()) if (p.pre && p.name !== 'You' && !ROOTS[1].people.includes(p)) ROOTS[1].people.push(p);
+// People who only ever appear as message senders — WhatsApp's log never recorded how they joined
+const MSGONLY = [];
+for (const s of Object.keys(DATA.msgs || {})) {
+  if (P.has(s)) continue;
+  const p = person(s);
+  p.msgOnly = true; p.status = 'in'; p.readded = false;
+  MSGONLY.push(p);
+}
+ROOTS.push({ id: 'g-msg', title: 'Chatted, but WhatsApp never recorded who added them', sub: 'Known only from the messages they sent', people: MSGONLY });
+
+// ---------- Stats ----------
+const adds = evs.filter(e => e.type === 'add' && e.actor !== 'Someone');
+const peopleAdded = adds.reduce((s, e) => s + e.targets.length, 0);
+const joins = evs.filter(e => e.type === 'join').length;
+const removed = [...P.values()].filter(p => p.status === 'removed').length;
+const left = [...P.values()].filter(p => p.status === 'left').length;
+document.getElementById('stats').innerHTML = [
+  [P.size, 'people in the log'], [peopleAdded, 'adds by a member'], [joins, 'invite-link joins'],
+  [removed, 'currently removed'], [left, 'left'], [ROOTS[1].people.length, 'members before the log'], [MSGONLY.length, 'no join recorded'],
+].map(([n, l]) => `<div class="stat"><b>${n}</b><span>${l}</span></div>`).join('');
+
+// ---------- Tree rendering ----------
+let sortMode = 'time';
+const openSet = new Set(['g-you', 'g-pre', 'You']);
+let selected = 'You';
+let query = '';
+const ico = {
+  chev: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>',
+  folder: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>',
+  person: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
+};
+const sortKids = arr => sortMode === 'size'
+  ? arr.slice().sort((a, b) => size(b.p ?? b) - size(a.p ?? a) || (a.e?.k ?? '').localeCompare(b.e?.k ?? ''))
+  : arr;
+const sortPeople = arr => arr.slice().sort((a, b) => sortMode === 'size'
+  ? size(b) - size(a) || a.name.localeCompare(b.name)
+  : (a.entry?.e.k ?? a.firstAct?.k ?? (DATA.msgs[a.name]?.first ? '9999-' + DATA.msgs[a.name].first : '')).localeCompare(b.entry?.e.k ?? b.firstAct?.k ?? (DATA.msgs[b.name]?.first ? '9999-' + DATA.msgs[b.name].first : '')));
+
+const matches = p => { if (!query) return false; const a = alias(p.name); return p.name.toLowerCase().replace(/[\s()-]/g, '').includes(query) || (a && aliasText(a).toLowerCase().replace(/[\s()-]/g, '').includes(query)); };
+const subtreeHit = p => p._hit ??= matches(p) || p.kids.some(k => subtreeHit(k.p));
+
+function pills(p) {
+  let s = '';
+  if (p.status === 'removed') s += '<span class="pill bad">removed</span>';
+  if (p.status === 'left') s += '<span class="pill bad">left</span>';
+  if (p.readded) s += '<span class="pill info">re-added</span>';
+  return s;
+}
+function personLi(p, e) {
+  const hasKids = p.kids.length > 0;
+  const open = hasKids && (openSet.has(p.name) || (query && p.kids.some(k => subtreeHit(k.p))));
+  const when = e ? `<span class="when">${fmtDT(e)}</span>` : '';
+  const row = `<div class="row${selected === p.name ? ' sel' : ''}${matches(p) ? ' hit' : ''}${query && !subtreeHit(p) ? ' dim' : ''}" role="treeitem" tabindex="0" data-n="${esc(p.name)}"${hasKids ? ` aria-expanded="${open}"` : ''}>
+    <span class="tw${hasKids ? '' : ' leaf'}" data-t="1">${hasKids ? ico.chev : ''}</span>
+    <span class="ic${hasKids ? '' : ' person'}">${hasKids ? ico.folder : ico.person}</span>
+    <span class="nm${isPhone(p.name) ? ' phone' : ''}">${esc(p.name)}</span>
+    ${alias(p.name) ? `<span class="who" title="WhatsApp name from the phone's saved contacts">${esc(aliasText(alias(p.name)))}</span>` : ''}
+    ${hasKids ? `<span class="cnt" title="${p.kids.length} added directly, ${size(p)} in their whole network">${p.kids.length} · ${size(p)}</span>` : ''}
+    ${when}${pills(p)}</div>`;
+  let kids = '';
+  if (open) {
+    const list = sortKids(p.kids).filter(k => !query || subtreeHit(k.p));
+    kids = `<ul role="group">${list.map(k => personLi(k.p, k.e)).join('')}</ul>`;
+  }
+  return `<li class="${open ? 'open' : ''}">${row}${kids}</li>`;
+}
+function render() {
+  for (const p of P.values()) delete p._hit;
+  const html = ROOTS.filter(r => r.people.length).map(r => {
+    const people = sortPeople(r.people).filter(p => !query || subtreeHit(p));
+    if (query && !people.length) return '';
+    if (r.id === 'g-you') return personLi(P.get('You'), DATA.events.find(e => e.type === 'create'));
+    const open = openSet.has(r.id) || !!query;
+    const total = r.people.reduce((s, p) => s + 1 + size(p), 0);
+    return `<li class="${open ? 'open' : ''}"><div class="row group-row" role="treeitem" tabindex="0" data-g="${r.id}" aria-expanded="${open}">
+      <span class="tw" data-t="1">${ico.chev}</span><span class="ic">${ico.folder}</span>
+      <span class="nm">${esc(r.title)}</span><span class="cnt">${r.people.length} · ${total}</span><span class="sub">${esc(r.sub)}</span></div>
+      ${open ? `<ul role="group">${people.map(p => personLi(p, p.entry?.e)).join('')}</ul>` : ''}</li>`;
+  }).join('');
+  document.getElementById('tree').innerHTML = html || `<li class="empty">No one matches “${esc(document.getElementById('q').value)}”. Try part of a number without spaces, like 84848.</li>`;
+}
+
+// ---------- Inspector ----------
+const lnk = n => `<button type="button" class="lnk${isPhone(n) ? ' mono' : ''}" data-go="${esc(n)}">${esc(n)}</button>`;
+const kindText = h => ({
+  create: 'Created the group',
+  add: `Added by ${lnk(h.by)}`,
+  link: 'Joined via invite link',
+  someone: 'Added by “Someone” (adder not named)',
+  removed: `Removed by ${lnk(h.by)}`,
+  left: 'Left the group',
+}[h.kind]);
+function chainOf(p) {
+  const c = []; for (let x = p; x; x = x.parent) c.unshift(x); return c;
+}
+function inspect(name) {
+  const p = P.get(name); if (!p) return;
+  const chain = chainOf(p);
+  const top = chain[0];
+  const origin = top.name === 'You' ? 'You created the group on Sep 23, 2025.'
+    : top.entry?.via === 'link' ? `${esc(top.name)} joined via the invite link.`
+    : top.entry?.via === 'someone' ? `WhatsApp didn't name who added ${esc(top.name)}.`
+    : top.msgOnly ? `WhatsApp's log never recorded how ${esc(top.name)} got in — they only appear as a message sender.`
+    : `${esc(top.name)} was already a member when the log starts.`;
+  const m = DATA.msgs[p.name];
+  const kidsList = p.kids.length ? `<ul class="kids">${p.kids.map(k => `<li>${lnk(k.p.name)}<span class="when">${fmtDT(k.e)}</span></li>`).join('')}</ul>` : '<p class="note" style="margin:0">Didn\'t add anyone.</p>';
+  const otherAdds = adds.filter(e => e.actor === p.name).flatMap(e => e.targets.filter(t => P.get(t).parent !== p).map(t => ({ t, e })));
+  document.getElementById('inspector').innerHTML = `
+    <div><h2 class="${isPhone(p.name) ? 'mono' : ''}">${esc(p.name)}</h2>
+      ${alias(p.name) ? `<p class="note" style="margin:2px 0 0">Saved in the contacts as <strong>${esc(aliasText(alias(p.name)))}</strong>.</p>` : ''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${p.status === 'in' ? '<span class="pill ok">in the group</span>' : ''}${pills(p)}</div></div>
+    <div class="facts">
+      <div><b>${p.kids.length}</b><span>added directly</span></div>
+      <div><b>${size(p)}</b><span>whole network</span></div>
+      <div><b>${m ? m.n : 0}</b><span>messages</span></div>
+    </div>
+    <div><h3>How they got in</h3>
+      ${chain.length > 1 ? `<div class="chain">${chain.map((x, i) => `<div class="step"><span class="dot"></span><div>${i === chain.length - 1 ? `<strong class="${isPhone(x.name) ? 'mono' : ''}">${esc(x.name)}</strong>` : lnk(x.name)}${x.entry && i > 0 ? `<div class="when">added ${fmtDT(x.entry.e)}</div>` : ''}</div></div>`).join('')}</div>` : ''}
+      <p class="note" style="margin:${chain.length > 1 ? '0' : '0'}">${origin}${chain.length > 1 ? ` ${chain.length - 1} step${chain.length > 2 ? 's' : ''} from there.` : ''}</p>
+    </div>
+    <div><h3>Membership history</h3>
+      ${p.hist.length ? `<ul class="hist">${p.hist.map(h => `<li><span class="when">${fmtDT(h.e)}</span><span>${kindText(h)}</span></li>`).join('')}</ul>` : `<p class="note" style="margin:0">No join or add recorded${p.msgOnly ? ' — they only appear as a message sender.' : '. They were in the group before the log starts.'}</p>`}
+    </div>
+    <div><h3>People they added (${p.kids.length})</h3>${kidsList}
+      ${otherAdds.length ? `<p class="note">Also re-added ${otherAdds.map(o => `${lnk(o.t)} (${fmtD(o.e.d)})`).join(', ')}. Those people sit under whoever first brought them in.</p>` : ''}
+    </div>
+    ${m ? `<p class="note" style="margin:0">Messages under this exact name: ${m.n}, first on ${fmtD(m.first)}, last on ${fmtD(m.last)}.</p>` : ''}
+  `;
+}
+
+// Leaderboard in the idle inspector state is replaced by selection; show top networks in stats footer instead
+function topNetworks() {
+  const top = [...P.values()].filter(p => p.kids.length).sort((a, b) => size(b) - size(a)).slice(0, 8);
+  const max = size(top[0]);
+  return `<div><h3>Biggest networks</h3><ul class="leaders">${top.map(p => `<li>${lnk(p.name)}<span class="bar" style="width:${Math.max(6, size(p) / max * 90)}px"></span><span class="when">${size(p)}</span></li>`).join('')}</ul></div>`;
+}
+
+function select(name, reveal) {
+  selected = name;
+  if (reveal) { for (let x = P.get(name)?.parent; x; x = x.parent) openSet.add(x.name); const top = chainOf(P.get(name))[0];
+    const r = ROOTS.find(r => r.people.includes(top)); if (r) openSet.add(r.id); }
+  render(); inspect(name);
+  document.getElementById('inspector').insertAdjacentHTML('beforeend', topNetworks());
+  if (reveal) document.querySelector(`.row[data-n="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// ---------- Events ----------
+document.getElementById('tree').addEventListener('click', ev => {
+  const row = ev.target.closest('.row'); if (!row) return;
+  const key = row.dataset.g || row.dataset.n;
+  const toggle = ev.target.closest('[data-t]') || row.dataset.g;
+  if (toggle && (row.dataset.g || P.get(key).kids.length)) { openSet.has(key) ? openSet.delete(key) : openSet.add(key); }
+  else if (row.dataset.n && P.get(key).kids.length) openSet.add(key);   // clicking a name opens its folder, the arrow closes it
+  if (row.dataset.n) { selected = key; inspect(key); document.getElementById('inspector').insertAdjacentHTML('beforeend', topNetworks()); }
+  render();
+  document.querySelector(`.row[data-${row.dataset.g ? 'g' : 'n'}="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+});
+document.getElementById('tree').addEventListener('keydown', ev => {
+  const row = ev.target.closest('.row'); if (!row) return;
+  const key = row.dataset.g || row.dataset.n;
+  const rows = [...document.querySelectorAll('#tree .row')]; const i = rows.indexOf(row);
+  if (ev.key === 'ArrowDown') { rows[i + 1]?.focus(); ev.preventDefault(); }
+  else if (ev.key === 'ArrowUp') { rows[i - 1]?.focus(); ev.preventDefault(); }
+  else if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
+    ev.key === 'ArrowRight' ? openSet.add(key) : openSet.delete(key); render();
+    document.querySelector(`.row[data-${row.dataset.g ? 'g' : 'n'}="${CSS.escape(key)}"]`)?.focus(); ev.preventDefault();
+  } else if (ev.key === 'Enter' || ev.key === ' ') { row.click(); ev.preventDefault(); }
+});
+document.getElementById('inspector').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-go]'); if (b) select(b.dataset.go, true);
+});
+let qt;
+document.getElementById('q').addEventListener('input', ev => {
+  clearTimeout(qt); qt = setTimeout(() => {
+    query = ev.target.value.toLowerCase().replace(/[\s()-]/g, '');
+    render();
+    const first = query && [...P.values()].find(matches);
+    if (first) { selected = first.name; inspect(first.name); document.getElementById('inspector').insertAdjacentHTML('beforeend', topNetworks()); render(); }
+  }, 120);
+});
+const setSort = m => { sortMode = m; document.getElementById('sortTime').setAttribute('aria-pressed', m === 'time'); document.getElementById('sortSize').setAttribute('aria-pressed', m === 'size'); render(); };
+document.getElementById('sortTime').onclick = () => setSort('time');
+document.getElementById('sortSize').onclick = () => setSort('size');
+document.getElementById('expandAll').onclick = () => { ROOTS.forEach(r => openSet.add(r.id)); for (const p of P.values()) if (p.kids.length) openSet.add(p.name); render(); };
+document.getElementById('collapseAll').onclick = () => { openSet.clear(); render(); };
+
+select('Kaif', true);
+</script>
+</body>
+</html>
